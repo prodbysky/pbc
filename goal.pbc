@@ -1,0 +1,33 @@
+import std.io as io;
+
+fn add(a: i32, b: i32) i32 {
+    return a + b;
+}
+
+fn add_modify(a: i32, b: &i32) void {
+    b += a;
+}
+
+data<T> Vector2 
+for T of Number
+{
+    x: T,
+    y: T,
+}
+
+define Debug {
+    fn print(const self);
+}
+
+implement Debug for Vector2 {}
+
+fn main() i32 {
+    // Constant
+    let a: i32 = 5;
+    // Mutable
+    mut b: i32 = 10;
+
+    add_modify(a, @b);
+
+    io.println("Hello world");
+}
