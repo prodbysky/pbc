@@ -1,0 +1,43 @@
+// Schizo ranting for my language
+
+use std/io/println;
+use std/io/Print;
+
+data Pair[T] {
+    first T,
+    second T,
+}
+
+behaviour[T] for Pair[T] {
+    fn create(first T, second T) {
+        return Pair {first: first, second: second};
+    }
+}
+
+
+behaviour[T] Pair[T] when T has Print {
+    fn print(&self) void {
+        use self;
+        std/io/println("{} {}", first, second);
+    }
+}
+
+behaviour[T] Pair[T] when T has Arithmetic {
+    fn sum(&self) T {
+        return self.first + self.second;
+    }
+}
+
+fn main() {
+    std/io/println("Hello there");
+
+    let primes [u8; 4]= [2, 3, 5, 7];
+    for prime in primes {
+        println("{}", prime);
+    }
+
+    for i in 0..10 {
+        print("{} ", i);
+        println("");
+    }
+}
