@@ -3,23 +3,34 @@ mod frontend;
 
 use crate::backend::Backend;
 
+use clap::Parser;
+
 fn main() {
-    let src = "return 123+69".trim();
-    let before = std::time::Instant::now();
-    let (tokens, _rest) = frontend::token::tokenize(src);
+    let config = Config::parse();
+    let Ok(src) = std::fs::read_to_string(config.input_name) else {
+        eprintln!("Failed to read input file");
+        return;
+    };
+
+    let (tokens, _rest) = frontend::token::tokenize(&src);
     let Some(ast) = frontend::ast::parse(&tokens) else {
         eprintln!("Failed to construct the ast");
         return;
     };
-    eprintln!("AST construction took: {:.2?}", before.elapsed());
 
-    let before = std::time::Instant::now();
     let mut backend_engine = backend::InkwellBackend::new();
     backend_engine.generate(&ast);
-    eprintln!("Program IR generation took: {:.2?}", before.elapsed());
-
     unsafe {
         let result = backend_engine.get_main()();
-        println!("Program exited with: {result}");
+        std::process::exit(i32::try_from(result).unwrap());
     }
+}
+
+/// The runtime for the PBC programming language
+#[derive(Debug, Parser)]
+#[command()]
+struct Config {
+    /// Input file name
+    #[arg()]
+    input_name: String,
 }
