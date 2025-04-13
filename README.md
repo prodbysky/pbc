@@ -1,4 +1,4 @@
 # PBC - programming language
 
-## Features
- - Interpreted (so far)
+ - It's JIT compiled
+ - You can just return values now
