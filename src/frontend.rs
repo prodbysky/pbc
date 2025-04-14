@@ -13,6 +13,7 @@ pub mod token {
         Let,
         Ident(String),
         Semicolon,
+        Colon,
         SingleEq,
     }
 
@@ -106,6 +107,7 @@ pub mod token {
             '*' => Some((Token::Star, &src[1..])),
             '/' => Some((Token::Slash, &src[1..])),
             '=' => Some((Token::SingleEq, &src[1..])),
+            ':' => Some((Token::Colon, &src[1..])),
             _ => None,
         }
     }
@@ -194,7 +196,11 @@ pub mod ast {
     #[derive(Debug, PartialEq)]
     pub enum Statement {
         Return(Expression),
-        ConstantCreate(String, Expression),
+        ConstantCreate {
+            name: String,
+            _type: String,
+            value: Expression,
+        },
     }
 
     pub fn parse(mut tokens: &[token::Token]) -> Option<Vec<Statement>> {
@@ -216,18 +222,31 @@ pub mod ast {
                     }
                 }
                 Some(token::Token::Let) => {
-                    tokens = &tokens[1..];
-                    let token::Token::Ident(ref name) = tokens[0] else {
-                        unreachable!()
-                    };
-                    tokens = &tokens[2..];
-
-                    let Some((expression, rest)) = parse_expr(tokens) else {
-                        unreachable!();
+                    let (_, rest) = tokens.split_first()?;
+                    tokens = rest;
+                    let (token::Token::Ident(name), rest) = tokens.split_first()? else {
+                        return None;
                     };
                     tokens = rest;
+
+                    let (token::Token::Ident(_type), rest) = tokens.split_first()? else {
+                        return None;
+                    };
+                    tokens = rest;
+
+                    let (token::Token::SingleEq, rest) = tokens.split_first()? else {
+                        return None;
+                    };
+                    tokens = rest;
+
+                    let (parsed, rest) = parse_expr(tokens)?;
+                    tokens = rest;
                     if let Some(token::Token::Semicolon) = tokens.first() {
-                        tree.push(Statement::ConstantCreate(name.clone(), expression));
+                        tree.push(Statement::ConstantCreate {
+                            name: name.to_string(),
+                            _type: _type.to_string(),
+                            value: parsed,
+                        });
                         tokens = &tokens[1..];
                     } else {
                         return None;

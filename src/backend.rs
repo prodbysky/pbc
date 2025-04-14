@@ -22,7 +22,13 @@ pub struct InkwellBackend {
     exec_engine: inkwell::execution_engine::ExecutionEngine<'static>,
     builder: inkwell::builder::Builder<'static>,
     i64_type: inkwell::types::IntType<'static>,
-    variables: std::collections::HashMap<String, inkwell::values::PointerValue<'static>>,
+    variables: std::collections::HashMap<
+        String,
+        (
+            inkwell::values::PointerValue<'static>,
+            inkwell::types::IntType<'static>,
+        ),
+    >,
 }
 
 use crate::frontend;
@@ -70,11 +76,19 @@ impl Backend for InkwellBackend {
                     let value = self.eval_expr(expr);
                     self.builder.build_return(Some(&value?))?;
                 }
-                frontend::ast::Statement::ConstantCreate(name, value) => {
+                frontend::ast::Statement::ConstantCreate {
+                    name,
+                    value,
+                    _type: t,
+                } => {
                     let value = self.eval_expr(value);
-                    let mem = self.builder.build_alloca(self.i64_type, name)?;
+                    let real_type = match t.as_str() {
+                        "i64" => self.ctx.i64_type(),
+                        t => unimplemented!("goofy new type not implemented: {t}"),
+                    };
+                    let mem = self.builder.build_alloca(real_type, name)?;
                     self.builder.build_store(mem, value?)?;
-                    self.variables.insert(name.to_string(), mem);
+                    self.variables.insert(name.to_string(), (mem, real_type));
                 }
                 s => {
                     unimplemented!("Not implemented statement code gen: {s:?}");
@@ -90,10 +104,14 @@ impl Backend for InkwellBackend {
     ) -> Result<Self::ExprType, Self::Error> {
         match expr {
             frontend::ast::Expression::Number(n) => Ok(self.i64_type.const_int(*n, false)),
-            frontend::ast::Expression::Variable(name) => Ok(self
-                .builder
-                .build_load(self.i64_type, *self.variables.get(name).unwrap(), name)?
-                .into_int_value()),
+            frontend::ast::Expression::Variable(name) => {
+                let (ptr, t) = self.variables.get(name).unwrap();
+
+                let val = self.builder.build_load(*t, *ptr, name)?;
+                match t {
+                    inkwell::types::IntType { .. } => Ok(val.into_int_value()),
+                }
+            }
             frontend::ast::Expression::Binary { left, op, right } => {
                 let left_val = self.eval_expr(left);
                 let right_val = self.eval_expr(right);
@@ -112,11 +130,12 @@ impl Backend for InkwellBackend {
                         .builder
                         .build_int_signed_div(left_val?, right_val?, "div")?),
                     frontend::token::Token::Ident(name) => {
-                        let var = self.variables.get(name).unwrap();
-                        Ok(self
-                            .builder
-                            .build_load(self.i64_type, *var, "name")?
-                            .into_int_value())
+                        let (ptr, t) = self.variables.get(name).unwrap();
+
+                        let val = self.builder.build_load(*t, *ptr, &name)?;
+                        match t {
+                            inkwell::types::IntType { .. } => Ok(val.into_int_value()),
+                        }
                     }
                     _ => panic!("Unsupported operator"),
                 }
