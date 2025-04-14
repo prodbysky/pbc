@@ -52,7 +52,7 @@ impl Backend for InkwellBackend {
                     let value = self.eval_expr(expr);
                     self.builder.build_return(Some(&value)).unwrap();
                 }
-                frontend::ast::Statement::ConstantAssign(name, value) => {
+                frontend::ast::Statement::ConstantCreate(name, value) => {
                     let value = self.eval_expr(value);
                     let mem = self.builder.build_alloca(self.i64_type, name).unwrap();
                     self.builder.build_store(mem, value).unwrap();

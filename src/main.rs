@@ -4,18 +4,26 @@ mod frontend;
 use crate::backend::Backend;
 
 use clap::Parser;
+use thiserror::Error;
 
-fn main() {
+#[derive(Debug, Error)]
+pub enum ProgramError {
+    #[error("An IO error occured")]
+    IO(#[from] std::io::Error),
+    #[error("An tokenizer error occured")]
+    Tokenizer(#[from] frontend::token::TokenizerError),
+}
+
+pub type ProgramResult<T> = Result<T, ProgramError>;
+
+fn main() -> ProgramResult<()> {
     let config = Config::parse();
-    let Ok(src) = std::fs::read_to_string(config.input_name) else {
-        eprintln!("Failed to read input file");
-        return;
-    };
+    let src = std::fs::read_to_string(config.input_name)?;
 
-    let (tokens, _rest) = frontend::token::tokenize(&src);
+    let (tokens, _rest) = frontend::token::tokenize(&src)?;
     let Some(ast) = frontend::ast::parse(&tokens) else {
         eprintln!("Failed to construct the ast");
-        return;
+        return Ok(());
     };
 
     let mut backend_engine = backend::InkwellBackend::new();

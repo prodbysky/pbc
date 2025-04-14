@@ -1,4 +1,5 @@
 pub mod token {
+    use thiserror::Error;
     #[derive(Debug, PartialEq, Clone)]
     pub enum Token {
         Number(u64),
@@ -15,7 +16,14 @@ pub mod token {
         SingleEq,
     }
 
-    pub fn tokenize(mut src: &str) -> (Vec<Token>, &str) {
+    #[derive(Debug, Error)]
+    pub enum TokenizerError {
+        #[error("Failed to parse this number: {0}")]
+        InvalidNumber(String),
+    }
+    pub type TokenizerResult<T> = Result<T, TokenizerError>;
+
+    pub fn tokenize(mut src: &str) -> TokenizerResult<(Vec<Token>, &str)> {
         let mut tokens: Vec<Token> = vec![];
 
         while !src.is_empty() {
@@ -37,7 +45,7 @@ pub mod token {
             }
 
             if src.starts_with(|c: char| c.is_ascii_digit()) {
-                let (token, rest) = parse_u64(src).unwrap();
+                let (token, rest) = parse_u64(src)?;
                 src = rest;
                 tokens.push(token);
                 continue;
@@ -47,15 +55,33 @@ pub mod token {
             src = rest;
             tokens.push(ident);
         }
-        (tokens, src)
+        Ok((tokens, src))
     }
 
-    fn parse_u64(src: &str) -> Option<(Token, &str)> {
-        Some(match src.find(|c: char| !c.is_ascii_digit()) {
-            None => (Token::Number(src.parse().ok()?), ""),
+    fn parse_u64(src: &str) -> TokenizerResult<(Token, &str)> {
+        Ok(match src.find(|c: char| !c.is_ascii_digit()) {
+            None => (
+                Token::Number(
+                    src.parse()
+                        .map_err(|_| TokenizerError::InvalidNumber(src.to_string()))?,
+                ),
+                "",
+            ),
             Some(end) => match src.split_at_checked(end) {
-                Some((num, rest)) => (Token::Number(num.parse().ok()?), rest),
-                None => (Token::Number(src.parse().ok()?), ""),
+                Some((num, rest)) => (
+                    Token::Number(
+                        num.parse()
+                            .map_err(|_| TokenizerError::InvalidNumber(src.to_string()))?,
+                    ),
+                    rest,
+                ),
+                None => (
+                    Token::Number(
+                        src.parse()
+                            .map_err(|_| TokenizerError::InvalidNumber(src.to_string()))?,
+                    ),
+                    "",
+                ),
             },
         })
     }
@@ -98,7 +124,7 @@ pub mod token {
         #[test]
         fn empty() {
             let src = "";
-            let (tokens, rest) = tokenize(src);
+            let (tokens, rest) = tokenize(src).unwrap();
             assert_eq!(tokens, vec![]);
             assert_eq!(rest, "");
         }
@@ -106,7 +132,7 @@ pub mod token {
         #[test]
         fn some_numbers() {
             let src = "123 69 1337";
-            let (tokens, rest) = tokenize(src);
+            let (tokens, rest) = tokenize(src).unwrap();
             assert_eq!(
                 tokens,
                 vec![Token::Number(123), Token::Number(69), Token::Number(1337),]
@@ -116,7 +142,7 @@ pub mod token {
         #[test]
         fn some_operators() {
             let src = "+-/*";
-            let (tokens, rest) = tokenize(src);
+            let (tokens, rest) = tokenize(src).unwrap();
             assert_eq!(
                 tokens,
                 vec![Token::Plus, Token::Minus, Token::Slash, Token::Star]
@@ -126,7 +152,7 @@ pub mod token {
         #[test]
         fn some_operators_and_numbers() {
             let src = "69 + 10 - 5 / 2 *";
-            let (tokens, rest) = tokenize(src);
+            let (tokens, rest) = tokenize(src).unwrap();
             assert_eq!(
                 tokens,
                 vec![
@@ -145,7 +171,7 @@ pub mod token {
         #[test]
         fn some_keywords() {
             let src = "return";
-            let (tokens, rest) = tokenize(src);
+            let (tokens, rest) = tokenize(src).unwrap();
             assert_eq!(tokens, vec![Token::Return,]);
             assert_eq!(rest, "");
         }
@@ -168,7 +194,7 @@ pub mod ast {
     #[derive(Debug, PartialEq)]
     pub enum Statement {
         Return(Expression),
-        ConstantAssign(String, Expression),
+        ConstantCreate(String, Expression),
     }
 
     pub fn parse(mut tokens: &[token::Token]) -> Option<Vec<Statement>> {
@@ -201,7 +227,7 @@ pub mod ast {
                     };
                     tokens = rest;
                     if let Some(token::Token::Semicolon) = tokens.first() {
-                        tree.push(Statement::ConstantAssign(name.clone(), expression));
+                        tree.push(Statement::ConstantCreate(name.clone(), expression));
                         tokens = &tokens[1..];
                     } else {
                         return None;
