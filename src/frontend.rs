@@ -10,6 +10,7 @@ pub mod token {
         CloseParen,
         Return,
         Ident(String),
+        Semicolon,
     }
 
     pub fn tokenize(mut src: &str) -> (Vec<Token>, &str) {
@@ -17,6 +18,11 @@ pub mod token {
 
         while !src.is_empty() {
             src = src.trim();
+            if src.starts_with(';') {
+                tokens.push(Token::Semicolon);
+                src = &src[1..];
+                continue;
+            }
             if let Some((t, s)) = parse_operator(src) {
                 tokens.push(t);
                 src = s;
@@ -210,9 +216,16 @@ pub mod ast {
                         unreachable!();
                     };
                     tokens = rest;
-                    tree.push(Statement::Return(expression));
+                    if let Some(token::Token::Semicolon) = tokens.first() {
+                        tree.push(Statement::Return(expression));
+                        tokens = &tokens[1..];
+                    } else {
+                        return None;
+                    }
                 }
-                _ => unreachable!(),
+                _ => {
+                    return None;
+                }
             }
         }
         Some(tree)
