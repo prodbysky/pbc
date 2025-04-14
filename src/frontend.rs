@@ -196,9 +196,13 @@ pub mod ast {
     #[derive(Debug, PartialEq)]
     pub enum Statement {
         Return(Expression),
-        ConstantCreate {
+        VariableCreate {
             name: String,
             _type: String,
+            value: Expression,
+        },
+        Assign {
+            name: String,
             value: Expression,
         },
     }
@@ -208,18 +212,26 @@ pub mod ast {
         while !tokens.is_empty() {
             match tokens.first() {
                 None => return Some(tree),
+                Some(token::Token::Ident(name)) => {
+                    tokens = &tokens[1..];
+                    let (token::Token::SingleEq, rest) = tokens.split_first()? else {
+                        return None;
+                    };
+                    tokens = rest;
+                    let (val, rest) = parse_expr(tokens)?;
+                    tokens = rest;
+                    tree.push(Statement::Assign {
+                        name: name.to_string(),
+                        value: val,
+                    });
+                }
                 Some(token::Token::Return) => {
                     tokens = &tokens[1..];
                     let Some((expression, rest)) = parse_expr(tokens) else {
                         unreachable!();
                     };
                     tokens = rest;
-                    if let Some(token::Token::Semicolon) = tokens.first() {
-                        tree.push(Statement::Return(expression));
-                        tokens = &tokens[1..];
-                    } else {
-                        return None;
-                    }
+                    tree.push(Statement::Return(expression));
                 }
                 Some(token::Token::Let) => {
                     let (_, rest) = tokens.split_first()?;
@@ -241,20 +253,21 @@ pub mod ast {
 
                     let (parsed, rest) = parse_expr(tokens)?;
                     tokens = rest;
-                    if let Some(token::Token::Semicolon) = tokens.first() {
-                        tree.push(Statement::ConstantCreate {
-                            name: name.to_string(),
-                            _type: _type.to_string(),
-                            value: parsed,
-                        });
-                        tokens = &tokens[1..];
-                    } else {
-                        return None;
-                    }
+                    tree.push(Statement::VariableCreate {
+                        name: name.to_string(),
+                        _type: _type.to_string(),
+                        value: parsed,
+                    });
                 }
                 _ => {
                     return None;
                 }
+            }
+
+            if let Some(token::Token::Semicolon) = tokens.first() {
+                tokens = &tokens[1..];
+            } else {
+                return None;
             }
         }
         Some(tree)

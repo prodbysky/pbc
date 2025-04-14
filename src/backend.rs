@@ -76,7 +76,7 @@ impl Backend for InkwellBackend {
                     let value = self.eval_expr(expr);
                     self.builder.build_return(Some(&value?))?;
                 }
-                frontend::ast::Statement::ConstantCreate {
+                frontend::ast::Statement::VariableCreate {
                     name,
                     value,
                     _type: t,
@@ -89,6 +89,12 @@ impl Backend for InkwellBackend {
                     let mem = self.builder.build_alloca(real_type, name)?;
                     self.builder.build_store(mem, value?)?;
                     self.variables.insert(name.to_string(), (mem, real_type));
+                }
+                frontend::ast::Statement::Assign { name, value } => {
+                    let val = self.eval_expr(value)?;
+                    let (ptr, t) = *self.variables.get(name).unwrap();
+                    self.variables.insert(name.to_string(), (ptr, t));
+                    self.builder.build_store(ptr, val)?;
                 }
                 s => {
                     unimplemented!("Not implemented statement code gen: {s:?}");
