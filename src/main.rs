@@ -20,19 +20,12 @@ fn main() -> ProgramResult<()> {
     let config = Config::parse();
     let src = std::fs::read_to_string(&config.input_name)?;
 
-    let ast = match frontend::parser::peg_parser::program(&src) {
+    let ast = match frontend::parser::parse_program(&src, &config.input_name) {
         Ok(a) => a,
         Err(e) => {
-            let line = e.location.line;
-            let line: &str = src.lines().collect::<Vec<&str>>().get(line - 1).unwrap();
-            let location = format!(
-                "{}:{}:{}",
-                config.input_name, e.location.line, e.location.column
-            );
-            eprintln!("Failed to parse:");
-            eprintln!("{location}: {line}");
-            let pad = " ".repeat(e.location.column + location.len() + 1);
-            eprintln!("{pad}^");
+            for err in e {
+                println!("{err}");
+            }
             return Ok(());
         }
     };
