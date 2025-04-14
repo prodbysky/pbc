@@ -9,8 +9,11 @@ pub mod token {
         OpenParen,
         CloseParen,
         Return,
+        Let,
+        Mut,
         Ident(String),
         Semicolon,
+        SingleEq,
     }
 
     pub fn tokenize(mut src: &str) -> (Vec<Token>, &str) {
@@ -64,10 +67,11 @@ pub mod token {
             .unwrap_or(src.len());
         let (ident, rest) = src.split_at(end);
 
-        if ident == "return" {
-            (Token::Return, rest)
-        } else {
-            (Token::Ident(ident.to_string()), rest)
+        match ident {
+            "return" => (Token::Return, rest),
+            "let" => (Token::Let, rest),
+            "mut" => (Token::Mut, rest),
+            _ => (Token::Ident(ident.to_string()), rest),
         }
     }
 
@@ -77,6 +81,7 @@ pub mod token {
             '-' => Some((Token::Minus, &src[1..])),
             '*' => Some((Token::Star, &src[1..])),
             '/' => Some((Token::Slash, &src[1..])),
+            '=' => Some((Token::SingleEq, &src[1..])),
             _ => None,
         }
     }
@@ -164,45 +169,8 @@ pub mod ast {
     #[derive(Debug, PartialEq)]
     pub enum Statement {
         Return(Expression),
-    }
-
-    impl ToString for Statement {
-        fn to_string(&self) -> String {
-            match self {
-                Statement::Return(e) => {
-                    format!("std::process::exit({})", e.to_string())
-                }
-            }
-        }
-    }
-
-    impl ToString for Expression {
-        fn to_string(&self) -> String {
-            match self {
-                Expression::Number(n) => n.to_string(),
-                Expression::Binary { left, op, right } => {
-                    let mut string = String::new();
-                    string.push_str(&left.to_string());
-                    match op {
-                        token::Token::Plus => {
-                            string.push('+');
-                        }
-                        token::Token::Minus => {
-                            string.push('-');
-                        }
-                        token::Token::Star => {
-                            string.push('*');
-                        }
-                        token::Token::Slash => {
-                            string.push('/');
-                        }
-                        _ => unreachable!(),
-                    }
-                    string.push_str(&right.to_string());
-                    string
-                }
-            }
-        }
+        ConstantAssign(String, Expression),
+        MutableAssign(String, Expression),
     }
 
     pub fn parse(mut tokens: &[token::Token]) -> Option<Vec<Statement>> {
@@ -218,6 +186,42 @@ pub mod ast {
                     tokens = rest;
                     if let Some(token::Token::Semicolon) = tokens.first() {
                         tree.push(Statement::Return(expression));
+                        tokens = &tokens[1..];
+                    } else {
+                        return None;
+                    }
+                }
+                Some(token::Token::Let) => {
+                    tokens = &tokens[1..];
+                    let token::Token::Ident(ref name) = tokens[0] else {
+                        unreachable!()
+                    };
+                    tokens = &tokens[2..];
+
+                    let Some((expression, rest)) = parse_expr(tokens) else {
+                        unreachable!();
+                    };
+                    tokens = rest;
+                    if let Some(token::Token::Semicolon) = tokens.first() {
+                        tree.push(Statement::ConstantAssign(name.clone(), expression));
+                        tokens = &tokens[1..];
+                    } else {
+                        return None;
+                    }
+                }
+                Some(token::Token::Mut) => {
+                    tokens = &tokens[1..];
+                    let token::Token::Ident(ref name) = tokens[0] else {
+                        unreachable!()
+                    };
+                    tokens = &tokens[1..];
+
+                    let Some((expression, rest)) = parse_expr(tokens) else {
+                        unreachable!();
+                    };
+                    tokens = rest;
+                    if let Some(token::Token::Semicolon) = tokens.first() {
+                        tree.push(Statement::MutableAssign(name.clone(), expression));
                         tokens = &tokens[1..];
                     } else {
                         return None;

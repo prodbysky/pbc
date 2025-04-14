@@ -47,8 +47,12 @@ impl Backend for InkwellBackend {
         for st in ast {
             match st {
                 frontend::ast::Statement::Return(expr) => {
-                    let value = self.eval_expr(&expr);
+                    let value = self.eval_expr(expr);
                     self.builder.build_return(Some(&value)).unwrap();
+                }
+                s => {
+                    eprintln!("{s:?}");
+                    return;
                 }
             }
         }
