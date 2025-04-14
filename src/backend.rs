@@ -16,19 +16,59 @@ pub trait Backend {
     fn get_main(&self) -> MainType;
 }
 
+pub struct BackendScopeManager<T> {
+    scopes: Vec<std::collections::HashMap<String, T>>,
+}
+
+impl<T> BackendScopeManager<T> {
+    pub fn new() -> Self {
+        Self { scopes: vec![] }
+    }
+
+    pub fn new_scope(&mut self) {
+        self.scopes.push(std::collections::HashMap::new());
+    }
+    pub fn pop_scope(&mut self) {
+        self.scopes.pop();
+    }
+    pub fn top_scope(&self) -> &std::collections::HashMap<String, T> {
+        self.scopes.last().expect("Ran out of scopes? sus")
+    }
+    pub fn top_scope_mut(&mut self) -> &mut std::collections::HashMap<String, T> {
+        self.scopes.last_mut().expect("Ran out of scopes? sus")
+    }
+
+    pub fn add_variable(&mut self, name: String, ident: T) {
+        self.top_scope_mut().insert(name, ident);
+    }
+    pub fn get_variable(&self, name: &str) -> Option<&T> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(val) = scope.get(name) {
+                return Some(val);
+            }
+        }
+        None
+    }
+    pub fn get_variable_mut(&mut self, name: &str) -> Option<&mut T> {
+        for scope in self.scopes.iter_mut().rev() {
+            if let Some(val) = scope.get_mut(name) {
+                return Some(val);
+            }
+        }
+        None
+    }
+}
+
 pub struct InkwellBackend {
     ctx: &'static inkwell::context::Context,
     pub module: inkwell::module::Module<'static>,
     exec_engine: inkwell::execution_engine::ExecutionEngine<'static>,
     builder: inkwell::builder::Builder<'static>,
     i64_type: inkwell::types::IntType<'static>,
-    variables: std::collections::HashMap<
-        String,
-        (
-            inkwell::values::PointerValue<'static>,
-            inkwell::types::IntType<'static>,
-        ),
-    >,
+    scopes: BackendScopeManager<(
+        inkwell::values::PointerValue<'static>,
+        inkwell::types::IntType<'static>,
+    )>,
 }
 
 use crate::frontend;
@@ -39,6 +79,8 @@ pub enum InkwellError {
     FailedToInitialize(String),
     #[error("Failed to build LLVM IR: {0}")]
     BuilderError(#[from] inkwell::builder::BuilderError),
+    #[error("Tried to get variable that doesn't exist: {0}")]
+    UndefinedReference(String),
 }
 
 impl Backend for InkwellBackend {
@@ -60,7 +102,7 @@ impl Backend for InkwellBackend {
             exec_engine,
             builder,
             i64_type,
-            variables: std::collections::HashMap::new(),
+            scopes: BackendScopeManager::new(),
         })
     }
 
@@ -69,6 +111,7 @@ impl Backend for InkwellBackend {
         let main_fn = self.module.add_function("main", main_fn_type, None);
         let block = self.ctx.append_basic_block(main_fn, "entry");
         self.builder.position_at_end(block);
+        self.scopes.new_scope();
 
         for st in ast {
             match st {
@@ -88,12 +131,14 @@ impl Backend for InkwellBackend {
                     };
                     let mem = self.builder.build_alloca(real_type, name)?;
                     self.builder.build_store(mem, value?)?;
-                    self.variables.insert(name.to_string(), (mem, real_type));
+                    self.scopes.add_variable(name.to_string(), (mem, real_type));
                 }
                 frontend::ast::Statement::Assign { name, value } => {
                     let val = self.eval_expr(value)?;
-                    let (ptr, t) = *self.variables.get(name).unwrap();
-                    self.variables.insert(name.to_string(), (ptr, t));
+                    let Some(&(ptr, t)) = self.scopes.get_variable(name) else {
+                        return Err(InkwellError::UndefinedReference(name.clone()));
+                    };
+                    self.scopes.add_variable(name.to_string(), (ptr, t));
                     self.builder.build_store(ptr, val)?;
                 }
                 s => {
@@ -101,6 +146,7 @@ impl Backend for InkwellBackend {
                 }
             }
         }
+        self.scopes.pop_scope();
         Ok(())
     }
 
@@ -111,9 +157,11 @@ impl Backend for InkwellBackend {
         match expr {
             frontend::ast::Expression::Number(n) => Ok(self.i64_type.const_int(*n, false)),
             frontend::ast::Expression::Variable(name) => {
-                let (ptr, t) = self.variables.get(name).unwrap();
+                let Some(&(ptr, t)) = self.scopes.get_variable(name) else {
+                    return Err(InkwellError::UndefinedReference(name.clone()));
+                };
 
-                let val = self.builder.build_load(*t, *ptr, name)?;
+                let val = self.builder.build_load(t, ptr, name)?;
                 match t {
                     inkwell::types::IntType { .. } => Ok(val.into_int_value()),
                 }
