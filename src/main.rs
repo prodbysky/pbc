@@ -12,6 +12,8 @@ pub enum ProgramError {
     IO(#[from] std::io::Error),
     #[error("An tokenizer error occured")]
     Tokenizer(#[from] frontend::token::TokenizerError),
+    #[error("An compilation error occured")]
+    Backend(#[from] backend::InkwellError),
 }
 
 pub type ProgramResult<T> = Result<T, ProgramError>;
@@ -26,8 +28,8 @@ fn main() -> ProgramResult<()> {
         return Ok(());
     };
 
-    let mut backend_engine = backend::InkwellBackend::new();
-    backend_engine.generate(&ast);
+    let mut backend_engine = backend::InkwellBackend::new()?;
+    backend_engine.generate(&ast)?;
     if config.display_ir {
         println!("{}", backend_engine.module.to_string());
     }

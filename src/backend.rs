@@ -1,9 +1,18 @@
 pub type MainType = unsafe extern "C" fn() -> i64;
+
+use thiserror::Error;
+
 pub trait Backend {
     type ExprType;
-    fn new() -> Self;
-    fn generate(&mut self, ast: &[frontend::ast::Statement]);
-    fn eval_expr(&mut self, expr: &frontend::ast::Expression) -> Self::ExprType;
+    type Error;
+    fn new() -> Result<Self, Self::Error>
+    where
+        Self: Sized;
+    fn generate(&mut self, ast: &[frontend::ast::Statement]) -> Result<(), Self::Error>;
+    fn eval_expr(
+        &mut self,
+        expr: &frontend::ast::Expression,
+    ) -> Result<Self::ExprType, Self::Error>;
     fn get_main(&self) -> MainType;
 }
 
@@ -18,29 +27,38 @@ pub struct InkwellBackend {
 
 use crate::frontend;
 
+#[derive(Debug, Error)]
+pub enum InkwellError {
+    #[error("Failed to initialize Inkwell Backend: {0}")]
+    FailedToInitialize(String),
+    #[error("Failed to build LLVM IR: {0}")]
+    BuilderError(#[from] inkwell::builder::BuilderError),
+}
+
 impl Backend for InkwellBackend {
     type ExprType = inkwell::values::IntValue<'static>;
-    fn new() -> Self {
+    type Error = InkwellError;
+    fn new() -> Result<Self, Self::Error> {
         let ctx = Box::leak(Box::new(inkwell::context::Context::create()));
         let module = ctx.create_module("main");
         let exec_engine = module
             .create_jit_execution_engine(inkwell::OptimizationLevel::None)
-            .unwrap();
+            .map_err(|e| InkwellError::FailedToInitialize(e.to_string()))?;
 
         let builder = ctx.create_builder();
 
         let i64_type = ctx.i64_type();
-        Self {
+        Ok(Self {
             ctx,
             module,
             exec_engine,
             builder,
             i64_type,
             variables: std::collections::HashMap::new(),
-        }
+        })
     }
 
-    fn generate(&mut self, ast: &[frontend::ast::Statement]) {
+    fn generate(&mut self, ast: &[frontend::ast::Statement]) -> Result<(), Self::Error> {
         let main_fn_type = self.i64_type.fn_type(&[], false);
         let main_fn = self.module.add_function("main", main_fn_type, None);
         let block = self.ctx.append_basic_block(main_fn, "entry");
@@ -50,57 +68,55 @@ impl Backend for InkwellBackend {
             match st {
                 frontend::ast::Statement::Return(expr) => {
                     let value = self.eval_expr(expr);
-                    self.builder.build_return(Some(&value)).unwrap();
+                    self.builder.build_return(Some(&value?))?;
                 }
                 frontend::ast::Statement::ConstantCreate(name, value) => {
                     let value = self.eval_expr(value);
-                    let mem = self.builder.build_alloca(self.i64_type, name).unwrap();
-                    self.builder.build_store(mem, value).unwrap();
+                    let mem = self.builder.build_alloca(self.i64_type, name)?;
+                    self.builder.build_store(mem, value?)?;
                     self.variables.insert(name.to_string(), mem);
                 }
                 s => {
-                    eprintln!("{s:?}");
-                    return;
+                    unimplemented!("Not implemented statement code gen: {s:?}");
                 }
             }
         }
+        Ok(())
     }
 
-    fn eval_expr(&mut self, expr: &frontend::ast::Expression) -> Self::ExprType {
+    fn eval_expr(
+        &mut self,
+        expr: &frontend::ast::Expression,
+    ) -> Result<Self::ExprType, Self::Error> {
         match expr {
-            frontend::ast::Expression::Number(n) => self.i64_type.const_int(*n, false),
-            frontend::ast::Expression::Variable(name) => self
+            frontend::ast::Expression::Number(n) => Ok(self.i64_type.const_int(*n, false)),
+            frontend::ast::Expression::Variable(name) => Ok(self
                 .builder
-                .build_load(self.i64_type, *self.variables.get(name).unwrap(), name)
-                .unwrap()
-                .into_int_value(),
+                .build_load(self.i64_type, *self.variables.get(name).unwrap(), name)?
+                .into_int_value()),
             frontend::ast::Expression::Binary { left, op, right } => {
                 let left_val = self.eval_expr(left);
                 let right_val = self.eval_expr(right);
 
                 match op {
-                    frontend::token::Token::Plus => self
+                    frontend::token::Token::Plus => {
+                        Ok(self.builder.build_int_add(left_val?, right_val?, "add")?)
+                    }
+                    frontend::token::Token::Minus => {
+                        Ok(self.builder.build_int_sub(left_val?, right_val?, "sub")?)
+                    }
+                    frontend::token::Token::Star => {
+                        Ok(self.builder.build_int_mul(left_val?, right_val?, "mul")?)
+                    }
+                    frontend::token::Token::Slash => Ok(self
                         .builder
-                        .build_int_add(left_val, right_val, "add")
-                        .unwrap(),
-                    frontend::token::Token::Minus => self
-                        .builder
-                        .build_int_sub(left_val, right_val, "sub")
-                        .unwrap(),
-                    frontend::token::Token::Star => self
-                        .builder
-                        .build_int_mul(left_val, right_val, "mul")
-                        .unwrap(),
-                    frontend::token::Token::Slash => self
-                        .builder
-                        .build_int_signed_div(left_val, right_val, "div")
-                        .unwrap(),
+                        .build_int_signed_div(left_val?, right_val?, "div")?),
                     frontend::token::Token::Ident(name) => {
                         let var = self.variables.get(name).unwrap();
-                        self.builder
-                            .build_load(self.i64_type, *var, "name")
-                            .unwrap()
-                            .into_int_value()
+                        Ok(self
+                            .builder
+                            .build_load(self.i64_type, *var, "name")?
+                            .into_int_value())
                     }
                     _ => panic!("Unsupported operator"),
                 }
