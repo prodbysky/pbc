@@ -1,2 +1,2 @@
-return 35 + 17 * 2;
 let a = 123;
+return a;

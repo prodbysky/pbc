@@ -10,7 +10,6 @@ pub mod token {
         CloseParen,
         Return,
         Let,
-        Mut,
         Ident(String),
         Semicolon,
         SingleEq,
@@ -70,7 +69,6 @@ pub mod token {
         match ident {
             "return" => (Token::Return, rest),
             "let" => (Token::Let, rest),
-            "mut" => (Token::Mut, rest),
             _ => (Token::Ident(ident.to_string()), rest),
         }
     }
@@ -159,6 +157,7 @@ pub mod ast {
     #[derive(Debug, PartialEq)]
     pub enum Expression {
         Number(u64),
+        Variable(String),
         Binary {
             left: Box<Expression>,
             op: token::Token,
@@ -170,7 +169,6 @@ pub mod ast {
     pub enum Statement {
         Return(Expression),
         ConstantAssign(String, Expression),
-        MutableAssign(String, Expression),
     }
 
     pub fn parse(mut tokens: &[token::Token]) -> Option<Vec<Statement>> {
@@ -204,24 +202,6 @@ pub mod ast {
                     tokens = rest;
                     if let Some(token::Token::Semicolon) = tokens.first() {
                         tree.push(Statement::ConstantAssign(name.clone(), expression));
-                        tokens = &tokens[1..];
-                    } else {
-                        return None;
-                    }
-                }
-                Some(token::Token::Mut) => {
-                    tokens = &tokens[1..];
-                    let token::Token::Ident(ref name) = tokens[0] else {
-                        unreachable!()
-                    };
-                    tokens = &tokens[1..];
-
-                    let Some((expression, rest)) = parse_expr(tokens) else {
-                        unreachable!();
-                    };
-                    tokens = rest;
-                    if let Some(token::Token::Semicolon) = tokens.first() {
-                        tree.push(Statement::MutableAssign(name.clone(), expression));
                         tokens = &tokens[1..];
                     } else {
                         return None;
@@ -281,6 +261,9 @@ pub mod ast {
                 }
             }
             Some((token::Token::Number(n), rest)) => Some((Expression::Number(*n), rest)),
+            Some((token::Token::Ident(name), rest)) => {
+                Some((Expression::Variable(name.clone()), rest))
+            }
             _ => None,
         }
     }

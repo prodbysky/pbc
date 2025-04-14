@@ -13,6 +13,7 @@ pub struct InkwellBackend {
     exec_engine: inkwell::execution_engine::ExecutionEngine<'static>,
     builder: inkwell::builder::Builder<'static>,
     i64_type: inkwell::types::IntType<'static>,
+    variables: std::collections::HashMap<String, inkwell::values::PointerValue<'static>>,
 }
 
 use crate::frontend;
@@ -35,6 +36,7 @@ impl Backend for InkwellBackend {
             exec_engine,
             builder,
             i64_type,
+            variables: std::collections::HashMap::new(),
         }
     }
 
@@ -50,6 +52,12 @@ impl Backend for InkwellBackend {
                     let value = self.eval_expr(expr);
                     self.builder.build_return(Some(&value)).unwrap();
                 }
+                frontend::ast::Statement::ConstantAssign(name, value) => {
+                    let value = self.eval_expr(value);
+                    let mem = self.builder.build_alloca(self.i64_type, name).unwrap();
+                    self.builder.build_store(mem, value).unwrap();
+                    self.variables.insert(name.to_string(), mem);
+                }
                 s => {
                     eprintln!("{s:?}");
                     return;
@@ -61,6 +69,11 @@ impl Backend for InkwellBackend {
     fn eval_expr(&mut self, expr: &frontend::ast::Expression) -> Self::ExprType {
         match expr {
             frontend::ast::Expression::Number(n) => self.i64_type.const_int(*n, false),
+            frontend::ast::Expression::Variable(name) => self
+                .builder
+                .build_load(self.i64_type, *self.variables.get(name).unwrap(), name)
+                .unwrap()
+                .into_int_value(),
             frontend::ast::Expression::Binary { left, op, right } => {
                 let left_val = self.eval_expr(left);
                 let right_val = self.eval_expr(right);
@@ -82,6 +95,13 @@ impl Backend for InkwellBackend {
                         .builder
                         .build_int_signed_div(left_val, right_val, "div")
                         .unwrap(),
+                    frontend::token::Token::Ident(name) => {
+                        let var = self.variables.get(name).unwrap();
+                        self.builder
+                            .build_load(self.i64_type, *var, "name")
+                            .unwrap()
+                            .into_int_value()
+                    }
                     _ => panic!("Unsupported operator"),
                 }
             }
