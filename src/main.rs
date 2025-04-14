@@ -31,7 +31,7 @@ fn main() -> ProgramResult<()> {
     let mut backend_engine = backend::InkwellBackend::new()?;
     backend_engine.generate(&ast)?;
     if config.display_ir {
-        println!("{}", backend_engine.module.to_string());
+        backend_engine.module.print_to_stderr();
     }
     unsafe {
         let result = backend_engine.get_main()();
