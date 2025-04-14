@@ -1,3 +1,4 @@
 let a i64 = 23;
-a = a * 3;
+let b i64 = 46;
+a = a + b;
 return a;

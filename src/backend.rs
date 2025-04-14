@@ -135,14 +135,6 @@ impl Backend for InkwellBackend {
                     frontend::token::Token::Slash => Ok(self
                         .builder
                         .build_int_signed_div(left_val?, right_val?, "div")?),
-                    frontend::token::Token::Ident(name) => {
-                        let (ptr, t) = self.variables.get(name).unwrap();
-
-                        let val = self.builder.build_load(*t, *ptr, &name)?;
-                        match t {
-                            inkwell::types::IntType { .. } => Ok(val.into_int_value()),
-                        }
-                    }
                     _ => panic!("Unsupported operator"),
                 }
             }

@@ -10,8 +10,6 @@ use thiserror::Error;
 pub enum ProgramError {
     #[error("An IO error occured")]
     IO(#[from] std::io::Error),
-    #[error("An tokenizer error occured")]
-    Tokenizer(#[from] frontend::token::TokenizerError),
     #[error("An compilation error occured")]
     Backend(#[from] backend::InkwellError),
 }
@@ -20,12 +18,23 @@ pub type ProgramResult<T> = Result<T, ProgramError>;
 
 fn main() -> ProgramResult<()> {
     let config = Config::parse();
-    let src = std::fs::read_to_string(config.input_name)?;
+    let src = std::fs::read_to_string(&config.input_name)?;
 
-    let (tokens, _rest) = frontend::token::tokenize(&src)?;
-    let Some(ast) = frontend::ast::parse(&tokens) else {
-        eprintln!("Failed to construct the ast");
-        return Ok(());
+    let ast = match frontend::parser::peg_parser::program(&src) {
+        Ok(a) => a,
+        Err(e) => {
+            let line = e.location.line;
+            let line: &str = src.lines().collect::<Vec<&str>>().get(line - 1).unwrap();
+            let location = format!(
+                "{}:{}:{}",
+                config.input_name, e.location.line, e.location.column
+            );
+            eprintln!("Failed to parse:");
+            eprintln!("{location}: {line}");
+            let pad = " ".repeat(e.location.column + location.len() + 1);
+            eprintln!("{pad}^");
+            return Ok(());
+        }
     };
 
     let mut backend_engine = backend::InkwellBackend::new()?;
