@@ -9,7 +9,7 @@ pub trait Backend {
 
 pub struct InkwellBackend {
     ctx: &'static inkwell::context::Context,
-    module: inkwell::module::Module<'static>,
+    pub module: inkwell::module::Module<'static>,
     exec_engine: inkwell::execution_engine::ExecutionEngine<'static>,
     builder: inkwell::builder::Builder<'static>,
     i64_type: inkwell::types::IntType<'static>,
@@ -23,20 +23,19 @@ impl Backend for InkwellBackend {
         let ctx = Box::leak(Box::new(inkwell::context::Context::create()));
         let module = ctx.create_module("main");
         let exec_engine = module
-            .create_jit_execution_engine(inkwell::OptimizationLevel::Aggressive)
+            .create_jit_execution_engine(inkwell::OptimizationLevel::None)
             .unwrap();
 
         let builder = ctx.create_builder();
 
         let i64_type = ctx.i64_type();
-        let s = Self {
+        Self {
             ctx,
             module,
             exec_engine,
             builder,
             i64_type,
-        };
-        s
+        }
     }
 
     fn generate(&mut self, ast: &[frontend::ast::Statement]) {
