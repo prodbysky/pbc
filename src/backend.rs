@@ -10,7 +10,7 @@ use inkwell::{
 use std::collections::HashMap;
 use thiserror::Error;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum LangType {
     I32,
     I64,
@@ -169,7 +169,7 @@ impl Backend for InkwellBackend {
                         "f64" => LangType::F64,
                         t => unimplemented!("Type not implemented: {}", t),
                     };
-                    let llvm_ty = llvm_type_for(self.ctx, lang_type.clone());
+                    let llvm_ty = llvm_type_for(self.ctx, lang_type);
                     let mem = self.builder.build_alloca(llvm_ty, name)?;
                     self.builder.build_store(mem, computed.as_basic_value())?;
                     self.scopes
